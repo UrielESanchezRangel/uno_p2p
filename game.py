@@ -17,8 +17,6 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("UNO P2P (Texto)")
 font = pygame.font.SysFont(None, 28)
 
-# -------------------- FUNCIONES BÁSICAS -------------------- #
-
 def draw_text(text, x, y, color=(255, 255, 255)):
     label = font.render(text, True, color)
     screen.blit(label, (x, y))
@@ -36,7 +34,7 @@ def crear_mazo():
     for color in colores:
         for valor in valores:
             mazo.append(f"{color} {valor}")
-            mazo.append(f"{color} {valor}")  # duplicados
+            mazo.append(f"{color} {valor}")
     comodines = ["Comodín", "Comodín +4"] * 4
     mazo.extend(comodines)
     random.shuffle(mazo)
@@ -48,8 +46,6 @@ def carta_valida(carta, actual):
     color, valor = carta.split(" ", 1) if " " in carta else (carta, "")
     a_color, a_valor = actual.split(" ", 1) if " " in actual else (actual, "")
     return color == a_color or valor == a_valor or "Comodín" in carta
-
-# -------------------- LOOP PRINCIPAL -------------------- #
 
 def main():
     state = "menu"
@@ -78,7 +74,6 @@ def main():
         clock.tick(30)
         screen.fill((30, 30, 30))
 
-        # -------------------- MENÚ -------------------- #
         if state == "menu":
             draw_text("Tu nombre:", 100, 80)
             pygame.draw.rect(screen, (255, 255, 255), (220, 75, 200, 30), 2)
@@ -123,7 +118,6 @@ def main():
                                 requests.post(f"{RELAY_SERVER}/register", json={"codigo": codigo_sala, "ip": ip})
                             except: pass
                             node = P2PNode(player_name, True, ip)
-                            node.start()
                             jugadores = [player_name]
                             manos[player_name] = []
                             mazo = crear_mazo()
@@ -137,7 +131,6 @@ def main():
                             if r.status_code == 200:
                                 ip = r.json()["ip"]
                                 node = P2PNode(player_name, False, ip)
-                                node.start()
                                 jugadores = []
                                 state = "lobby"
 
@@ -153,12 +146,18 @@ def main():
                         else:
                             code_text += event.unicode
 
-        # -------------------- LOBBY -------------------- #
         elif state == "lobby":
             draw_text(f"Código de sala: {codigo_sala}", 50, 10)
             draw_text("Jugadores:", 50, 50)
             for i, name in enumerate(jugadores):
-                draw_text(f"{i+1}. {name}", 70, 80 + i*30)
+                draw_text(f"{i+1}. {name}", 70, 80 + i * 30)
+
+            # Chat
+            draw_text("Chat:", 500, 50)
+            for i, msg in enumerate(chat_messages[-10:]):
+                draw_text(msg, 500, 80 + i * 20)
+            pygame.draw.rect(screen, (255, 255, 255), (500, 300, 250, 30), 2)
+            draw_text(chat_input + "_", 505, 305)
 
             if node.is_host:
                 pygame.draw.rect(screen, (0, 150, 0), (300, 500, 200, 40))
@@ -178,18 +177,31 @@ def main():
                             }).encode())
                         state = "game"
 
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN:
+                        if chat_input.strip():
+                            mensaje = f"{player_name}: {chat_input.strip()}"
+                            chat_messages.append(mensaje)
+                            node.send_to_all({"type": "chat", "msg": mensaje})
+                            chat_input = ""
+                    elif event.key == pygame.K_BACKSPACE:
+                        chat_input = chat_input[:-1]
+                    else:
+                        chat_input += event.unicode
+
             for m in node.get_messages():
                 if m["type"] == "join":
                     jugadores.append(m["name"])
                     manos[m["name"]] = []
+                elif m["type"] == "chat":
+                    chat_messages.append(m["msg"])
 
-        # -------------------- JUEGO -------------------- #
         elif state == "game":
             draw_text(f"Carta actual: {carta_actual}", 50, 20)
             draw_text("Tu mano:", 50, 60)
             for i, c in enumerate(manos[player_name]):
                 color = (0, 255, 0) if carta_valida(c, carta_actual) else (180, 180, 180)
-                draw_text(f"{i+1}. {c}", 70, 100 + i*30, color)
+                draw_text(f"{i+1}. {c}", 70, 100 + i * 30, color)
 
             draw_text(f"Turno: {jugadores[turno_actual]}", 600, 20)
 
