@@ -1,4 +1,3 @@
-# game.py
 import pygame
 import random
 import requests
@@ -12,14 +11,19 @@ from network import P2PNode
 from config import PORT, RELAY_SERVER
 
 pygame.init()
-WIDTH, HEIGHT = 800, 600
+WIDTH, HEIGHT = 1000, 700
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("UNO P2P (Texto)")
+pygame.display.set_caption("UNO P2P")
 font = pygame.font.SysFont(None, 28)
 
 def draw_text(text, x, y, color=(255, 255, 255)):
     label = font.render(text, True, color)
     screen.blit(label, (x, y))
+
+def draw_centered_text(text, rect, color=(255, 255, 255)):
+    label = font.render(text, True, color)
+    text_rect = label.get_rect(center=rect.center)
+    screen.blit(label, text_rect)
 
 def generar_codigo():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -47,6 +51,49 @@ def carta_valida(carta, actual):
     a_color, a_valor = actual.split(" ", 1) if " " in actual else (actual, "")
     return color == a_color or valor == a_valor or "Comodín" in carta
 
+def obtener_color_rgb(carta):
+    if "Rojo" in carta:
+        return (220, 30, 30)
+    elif "Verde" in carta:
+        return (30, 180, 70)
+    elif "Azul" in carta:
+        return (30, 100, 220)
+    elif "Amarillo" in carta:
+        return (230, 230, 50)
+    elif "Comodín" in carta:
+        return (0, 0, 0)
+    else:
+        return (100, 100, 100)
+
+def reciclar_mazo(mazo, pila):
+    if not mazo and len(pila) > 1:
+        carta_superior = pila[-1]
+        mazo.extend(pila[:-1])
+        random.shuffle(mazo)
+        pila[:] = [carta_superior]
+
+def seleccionar_color():
+    colores = [("Rojo", (220, 30, 30)), ("Verde", (30, 180, 70)),
+               ("Azul", (30, 100, 220)), ("Amarillo", (230, 230, 50))]
+    opciones = []
+    while True:
+        screen.fill((20, 20, 20))
+        draw_text("Selecciona un color:", 380, 150)
+        for i, (nombre, color) in enumerate(colores):
+            rect = pygame.Rect(370 + i * 100, 200, 80, 80)
+            pygame.draw.rect(screen, color, rect)
+            pygame.draw.rect(screen, (255, 255, 255), rect, 3)
+            draw_centered_text(nombre, rect)
+            opciones.append((rect, nombre))
+        pygame.display.flip()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                mx, my = event.pos
+                for rect, nombre in opciones:
+                    if rect.collidepoint(mx, my):
+                        return nombre
 def main():
     state = "menu"
     name_text = ""
@@ -119,10 +166,8 @@ def main():
                             except: pass
                             node = P2PNode(player_name, True, ip)
                             jugadores = [player_name]
-                            manos[player_name] = []
                             mazo = crear_mazo()
-                            for _ in range(7):
-                                manos[player_name].append(mazo.pop())
+                            manos[player_name] = [mazo.pop() for _ in range(7)]
                             carta_actual = mazo.pop()
                             pila = [carta_actual]
                             state = "lobby"
@@ -145,14 +190,12 @@ def main():
                             code_text = code_text[:-1]
                         else:
                             code_text += event.unicode
-
         elif state == "lobby":
             draw_text(f"Código de sala: {codigo_sala}", 50, 10)
             draw_text("Jugadores:", 50, 50)
             for i, name in enumerate(jugadores):
                 draw_text(f"{i+1}. {name}", 70, 80 + i * 30)
 
-            # Chat
             draw_text("Chat:", 500, 50)
             for i, msg in enumerate(chat_messages[-10:]):
                 draw_text(msg, 500, 80 + i * 20)
@@ -162,6 +205,13 @@ def main():
             if node.is_host:
                 pygame.draw.rect(screen, (0, 150, 0), (300, 500, 200, 40))
                 draw_text("Iniciar partida", 330, 510)
+
+            for m in node.get_messages():
+                if m["type"] == "join":
+                    jugadores.append(m["name"])
+                    manos[m["name"]] = []
+                elif m["type"] == "chat":
+                    chat_messages.append(m["msg"])
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -188,37 +238,93 @@ def main():
                         chat_input = chat_input[:-1]
                     else:
                         chat_input += event.unicode
+        elif state == "game":
+            screen.fill((30, 30, 30))
+            draw_text(f"Carta actual: {carta_actual}", 50, 20)
+            draw_text(f"Turno actual: {jugadores[turno_actual]}", 600, 20)
+            draw_text("Tu mano:", 50, 60)
+
+            card_rects = []
+            for i, carta in enumerate(manos[player_name]):
+                x = 70 + (i % 8) * 90
+                y = 100 + (i // 8) * 60
+                rect = pygame.Rect(x, y, 80, 50)
+                color = obtener_color_rgb(carta) if carta_valida(carta, carta_actual) else (80, 80, 80)
+                pygame.draw.rect(screen, color, rect)
+                pygame.draw.rect(screen, (255, 255, 255), rect, 2)
+                draw_centered_text(carta, rect)
+                card_rects.append((rect, carta))
+
+            robar_rect = pygame.Rect(70, HEIGHT - 100, 160, 40)
+            pygame.draw.rect(screen, (200, 50, 50), robar_rect)
+            pygame.draw.rect(screen, (255, 255, 255), robar_rect, 2)
+            draw_text("Robar carta", robar_rect.x + 20, robar_rect.y + 10)
+
+            draw_text("Chat:", 600, 100)
+            for i, msg in enumerate(chat_messages[-6:]):
+                draw_text(msg, 400, 130 + i * 20)
 
             for m in node.get_messages():
-                if m["type"] == "join":
-                    jugadores.append(m["name"])
-                    manos[m["name"]] = []
-                elif m["type"] == "chat":
-                    chat_messages.append(m["msg"])
-
-        elif state == "game":
-            draw_text(f"Carta actual: {carta_actual}", 50, 20)
-            draw_text("Tu mano:", 50, 60)
-            for i, c in enumerate(manos[player_name]):
-                color = (0, 255, 0) if carta_valida(c, carta_actual) else (180, 180, 180)
-                draw_text(f"{i+1}. {c}", 70, 100 + i * 30, color)
-
-            draw_text(f"Turno: {jugadores[turno_actual]}", 600, 20)
-
+                if m["type"] == "jugada" and m["jugador"] != player_name:
+                    carta_actual = m["carta"]
+                    pila.append(carta_actual)
+                    chat_messages.append(f"{m['jugador']} jugó {m['carta']}")
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit(); return
-                if event.type == pygame.KEYDOWN:
-                    if event.key in [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7]:
-                        idx = event.key - pygame.K_1
-                        if 0 <= idx < len(manos[player_name]) and jugadores[turno_actual] == player_name:
-                            carta = manos[player_name][idx]
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    mx, my = event.pos
+                    if robar_rect.collidepoint(mx, my) and jugadores[turno_actual] == player_name:
+                        reciclar_mazo(mazo, pila)
+                        if mazo:
+                            nueva = mazo.pop()
+                            manos[player_name].append(nueva)
+                            chat_messages.append(f"{player_name} robó una carta.")
+                    for rect, carta in card_rects:
+                        if rect.collidepoint(mx, my) and jugadores[turno_actual] == player_name:
                             if carta_valida(carta, carta_actual):
                                 carta_actual = carta
                                 pila.append(carta)
-                                manos[player_name].pop(idx)
-                                turno_actual = (turno_actual + 1) % len(jugadores)
-
+                                node.send_to_all({
+                                    "type": "jugada",
+                                    "carta": carta,
+                                    "jugador": player_name
+                                })
+                                manos[player_name].remove(carta)
+                                chat_messages.append(f"{player_name} jugó {carta}")
+                                efecto = carta.split(" ", 1)[-1] if " " in carta else carta
+                                if efecto == "+2":
+                                    turno_siguiente = (turno_actual + 1) % len(jugadores)
+                                    reciclar_mazo(mazo, pila)
+                                    for _ in range(2):
+                                        if mazo:
+                                            manos[jugadores[turno_siguiente]].append(mazo.pop())
+                                    chat_messages.append(f"{jugadores[turno_siguiente]} robó 2 cartas.")
+                                    turno_actual = (turno_actual + 2) % len(jugadores)
+                                elif efecto == "Salto":
+                                    chat_messages.append(f"{jugadores[(turno_actual + 1) % len(jugadores)]} fue saltado.")
+                                    turno_actual = (turno_actual + 2) % len(jugadores)
+                                elif efecto == "Reversa":
+                                    jugadores.reverse()
+                                    turno_actual = 1 if len(jugadores) > 2 else (turno_actual + 1) % len(jugadores)
+                                elif "Comodín +4" in carta:
+                                    color_escogido = seleccionar_color()
+                                    carta_actual = f"{color_escogido} Comodín +4"
+                                    turno_siguiente = (turno_actual + 1) % len(jugadores)
+                                    reciclar_mazo(mazo, pila)
+                                    for _ in range(4):
+                                        if mazo:
+                                            manos[jugadores[turno_siguiente]].append(mazo.pop())
+                                    chat_messages.append(f"{jugadores[turno_siguiente]} robó 4 cartas.")
+                                    turno_actual = (turno_actual + 1) % len(jugadores)
+                                elif "Comodín" in carta:
+                                    color_escogido = seleccionar_color()
+                                    carta_actual = f"{color_escogido} Comodín"
+                                    turno_actual = (turno_actual + 1) % len(jugadores)
+                                else:
+                                    turno_actual = (turno_actual + 1) % len(jugadores)
+                            else:
+                                chat_messages.append(f"{carta} no se puede jugar.")
         pygame.display.flip()
 
 if __name__ == "__main__":
