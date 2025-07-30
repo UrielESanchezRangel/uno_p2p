@@ -1,4 +1,3 @@
-# network.py
 import socket
 import threading
 import json
@@ -23,26 +22,33 @@ class P2PNode:
 
     def accept_connections(self):
         while self.running:
-            conn, _ = self.server.accept()
-            self.peers.append(conn)
-            threading.Thread(target=self.handle_client, args=(conn,), daemon=True).start()
+            try:
+                conn, _ = self.server.accept()
+                self.peers.append(conn)
+                threading.Thread(target=self.handle_client, args=(conn,), daemon=True).start()
+            except Exception:
+                break
 
     def connect_to_host(self, host_ip):
-        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        conn.connect((host_ip, PORT))
-        self.peers.append(conn)
-        threading.Thread(target=self.handle_client, args=(conn,), daemon=True).start()
+        try:
+            conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            conn.connect((host_ip, PORT))
+            self.peers.append(conn)
+            threading.Thread(target=self.handle_client, args=(conn,), daemon=True).start()
+        except Exception:
+            print(f"❌ No se pudo conectar al host en {host_ip}:{PORT}")
 
     def handle_client(self, conn):
         while self.running:
             try:
                 data = conn.recv(4096)
-                if data:
-                    mensajes = data.decode().split("\n")
-                    for mensaje in mensajes:
-                        if mensaje.strip():
-                            self.messages.append(json.loads(mensaje))
-            except:
+                if not data:
+                    break
+                mensajes = data.decode().split("\n")
+                for mensaje in mensajes:
+                    if mensaje.strip():
+                        self.messages.append(json.loads(mensaje))
+            except (ConnectionResetError, ConnectionAbortedError, OSError):
                 break
 
     def send_to_all(self, data_dict):
