@@ -16,15 +16,28 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("UNO P2P")
 font = pygame.font.SysFont(None, 28)
 
-def draw_text(text, x, y, color=(255, 255, 255)):
-    label = font.render(text, True, color)
+USUARIOS_FILE = "usuarios.json"
+if not os.path.exists(USUARIOS_FILE):
+    with open(USUARIOS_FILE, "w") as f:
+        json.dump({}, f)
+
+def draw_text(text, x, y, color=(255, 255, 255), font_size=28):
+    local_font = pygame.font.SysFont(None, font_size)
+    label = local_font.render(text, True, color)
     screen.blit(label, (x, y))
 
-def draw_centered_text(text, rect, color=(255, 255, 255)):
-    label = font.render(text, True, color)
-    text_rect = label.get_rect(center=rect.center)
-    screen.blit(label, text_rect)
-
+def draw_centered_text(text, rect, color=(255, 255, 255), font_size=18):
+    lines = text.split(" ")
+    card_font = pygame.font.SysFont(None, font_size)
+    if len(lines) == 2:
+        label1 = card_font.render(lines[0], True, color)
+        label2 = card_font.render(lines[1], True, color)
+        screen.blit(label1, (rect.centerx - label1.get_width() // 2, rect.y + 5))
+        screen.blit(label2, (rect.centerx - label2.get_width() // 2, rect.y + rect.height // 2))
+    else:
+        label = card_font.render(text, True, color)
+        text_rect = label.get_rect(center=rect.center)
+        screen.blit(label, text_rect)
 def generar_codigo():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
@@ -94,8 +107,35 @@ def seleccionar_color():
                 for rect, nombre in opciones:
                     if rect.collidepoint(mx, my):
                         return nombre
+def cargar_usuarios():
+    with open(USUARIOS_FILE, "r") as f:
+        return json.load(f)
+
+def guardar_usuarios(usuarios):
+    with open(USUARIOS_FILE, "w") as f:
+        json.dump(usuarios, f)
+
+def autenticar_usuario(usuario, password, registrar=False):
+    usuarios = cargar_usuarios()
+    if registrar:
+        if usuario in usuarios:
+            return False, "El usuario ya existe."
+        usuarios[usuario] = password
+        guardar_usuarios(usuarios)
+        return True, "Usuario registrado."
+    else:
+        if usuario in usuarios and usuarios[usuario] == password:
+            return True, "Inicio de sesión exitoso."
+        return False, "Credenciales incorrectas."
 def main():
-    state = "menu"
+    state = "login"
+
+    login_user = ""
+    login_pass = ""
+    active_user = False
+    active_pass = False
+    login_message = ""
+
     name_text = ""
     code_text = ""
     active_name = False
@@ -121,7 +161,59 @@ def main():
         clock.tick(30)
         screen.fill((30, 30, 30))
 
-        if state == "menu":
+        if state == "login":
+            draw_text("Usuario:", 100, 100)
+            pygame.draw.rect(screen, (255, 255, 255), (220, 95, 200, 30), 2)
+            draw_text(login_user + "_", 225, 100)
+
+            draw_text("Contraseña:", 100, 150)
+            pygame.draw.rect(screen, (255, 255, 255), (220, 145, 200, 30), 2)
+            draw_text("*" * len(login_pass) + "_", 225, 150)
+
+            pygame.draw.rect(screen, (100, 100, 255), (220, 200, 100, 30))
+            draw_text("Iniciar", 240, 205)
+
+            pygame.draw.rect(screen, (100, 255, 100), (330, 200, 100, 30))
+            draw_text("Registrar", 345, 205)
+
+            draw_text(login_message, 100, 250, (255, 100, 100))
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit(); return
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    mx, my = event.pos
+                    active_user = pygame.Rect(220, 95, 200, 30).collidepoint(mx, my)
+                    active_pass = pygame.Rect(220, 145, 200, 30).collidepoint(mx, my)
+
+                    if pygame.Rect(220, 200, 100, 30).collidepoint(mx, my):
+                        ok, msg = autenticar_usuario(login_user.strip(), login_pass.strip(), registrar=False)
+                        login_message = msg
+                        if ok:
+                            name_text = login_user.strip()
+                            player_name = name_text
+                            state = "menu"
+
+                    if pygame.Rect(330, 200, 100, 30).collidepoint(mx, my):
+                        ok, msg = autenticar_usuario(login_user.strip(), login_pass.strip(), registrar=True)
+                        login_message = msg
+                        if ok:
+                            name_text = login_user.strip()
+                            player_name = name_text
+                            state = "menu"
+
+                elif event.type == pygame.KEYDOWN:
+                    if active_user:
+                        if event.key == pygame.K_BACKSPACE:
+                            login_user = login_user[:-1]
+                        else:
+                            login_user += event.unicode
+                    elif active_pass:
+                        if event.key == pygame.K_BACKSPACE:
+                            login_pass = login_pass[:-1]
+                        else:
+                            login_pass += event.unicode
+        elif state == "menu":
             draw_text("Tu nombre:", 100, 80)
             pygame.draw.rect(screen, (255, 255, 255), (220, 75, 200, 30), 2)
             draw_text(name_text + "_", 225, 80)
@@ -191,20 +283,27 @@ def main():
                         else:
                             code_text += event.unicode
         elif state == "lobby":
-            draw_text(f"Código de sala: {codigo_sala}", 50, 10)
-            draw_text("Jugadores:", 50, 50)
+            draw_text(f"Código de sala: {codigo_sala}", 400, 10)
+            draw_text("Jugadores:", 400, 50)
             for i, name in enumerate(jugadores):
-                draw_text(f"{i+1}. {name}", 70, 80 + i * 30)
+                draw_text(f"{i+1}. {name}", 420, 80 + i * 30)
 
-            draw_text("Chat:", 500, 50)
+            # Chat alineado a la derecha
+            chat_box_rect = pygame.Rect(WIDTH - 330, 300, 300, 220)
+            pygame.draw.rect(screen, (50, 50, 50), chat_box_rect)
+            pygame.draw.rect(screen, (255, 255, 255), chat_box_rect, 2)
+
+            draw_text("Chat:", WIDTH - 320, 310)
             for i, msg in enumerate(chat_messages[-10:]):
-                draw_text(msg, 500, 80 + i * 20)
-            pygame.draw.rect(screen, (255, 255, 255), (500, 300, 250, 30), 2)
-            draw_text(chat_input + "_", 505, 305)
+                draw_text(msg, WIDTH - 320, 330 + i * 20)
+
+            input_rect = pygame.Rect(WIDTH - 320, 510, 280, 30)
+            pygame.draw.rect(screen, (255, 255, 255), input_rect, 2)
+            draw_text(chat_input + "_", WIDTH - 315, 515)
 
             if node.is_host:
-                pygame.draw.rect(screen, (0, 150, 0), (300, 500, 200, 40))
-                draw_text("Iniciar partida", 330, 510)
+                pygame.draw.rect(screen, (0, 150, 0), (400, 500, 200, 40))
+                draw_text("Iniciar partida", 430, 510)
 
             for m in node.get_messages():
                 if m["type"] == "join":
@@ -217,7 +316,7 @@ def main():
                 if event.type == pygame.QUIT:
                     pygame.quit(); return
                 if event.type == pygame.MOUSEBUTTONDOWN and node.is_host:
-                    if pygame.Rect(300, 500, 200, 40).collidepoint(event.pos):
+                    if pygame.Rect(400, 500, 200, 40).collidepoint(event.pos):
                         for i, conn in enumerate(node.peers):
                             conn.send(json.dumps({
                                 "type": "start_game",
@@ -226,7 +325,6 @@ def main():
                                 "carta_actual": carta_actual
                             }).encode())
                         state = "game"
-
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
                         if chat_input.strip():
@@ -260,15 +358,25 @@ def main():
             pygame.draw.rect(screen, (255, 255, 255), robar_rect, 2)
             draw_text("Robar carta", robar_rect.x + 20, robar_rect.y + 10)
 
-            draw_text("Chat:", 600, 100)
-            for i, msg in enumerate(chat_messages[-6:]):
-                draw_text(msg, 400, 130 + i * 20)
+            # Chat a la derecha
+            chat_box_rect = pygame.Rect(WIDTH - 330, 300, 300, 200)
+            pygame.draw.rect(screen, (50, 50, 50), chat_box_rect)
+            pygame.draw.rect(screen, (255, 255, 255), chat_box_rect, 2)
+
+            draw_text("Chat:", WIDTH - 320, 310)
+            for i, msg in enumerate(chat_messages[-8:]):
+                draw_text(msg, WIDTH - 320, 330 + i * 20)
+
+            input_rect = pygame.Rect(WIDTH - 320, 510, 280, 30)
+            pygame.draw.rect(screen, (255, 255, 255), input_rect, 2)
+            draw_text(chat_input + "_", WIDTH - 315, 515)
 
             for m in node.get_messages():
                 if m["type"] == "jugada" and m["jugador"] != player_name:
                     carta_actual = m["carta"]
                     pila.append(carta_actual)
                     chat_messages.append(f"{m['jugador']} jugó {m['carta']}")
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit(); return
@@ -280,6 +388,7 @@ def main():
                             nueva = mazo.pop()
                             manos[player_name].append(nueva)
                             chat_messages.append(f"{player_name} robó una carta.")
+                            turno_actual = (turno_actual + 1) % len(jugadores)
                     for rect, carta in card_rects:
                         if rect.collidepoint(mx, my) and jugadores[turno_actual] == player_name:
                             if carta_valida(carta, carta_actual):
@@ -325,7 +434,20 @@ def main():
                                     turno_actual = (turno_actual + 1) % len(jugadores)
                             else:
                                 chat_messages.append(f"{carta} no se puede jugar.")
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN:
+                        if chat_input.strip():
+                            mensaje = f"{player_name}: {chat_input.strip()}"
+                            chat_messages.append(mensaje)
+                            node.send_to_all({"type": "chat", "msg": mensaje})
+                            chat_input = ""
+                    elif event.key == pygame.K_BACKSPACE:
+                        chat_input = chat_input[:-1]
+                    else:
+                        chat_input += event.unicode
+
         pygame.display.flip()
 
 if __name__ == "__main__":
     main()
+    
